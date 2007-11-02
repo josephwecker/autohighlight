@@ -1,0 +1,83 @@
+{
+    idn:    $[a-zA-Z][a-zA-Z0-9.\-]* .
+    Number: $[-]?[0-9]+ .
+} {
+    VarNameUse: idn .
+    VarNameDef: idn .
+    ProcNameDef: idn .
+    ProcNameUse: idn .
+    TypeNameDef: idn .
+    TypeNameUse: idn .
+
+    ActualList: ActualList ',' Expr .
+    ActualList: Expr .
+    Actuals:  .
+    Actuals: ActualList .
+    ArrayTy: 'ARRAY' SubrTy 'OF' Type .
+    Assignment: Expr ':=' Expr .
+    BlkSem: Block ';' .
+    Block: Decls 'BEGIN' Stmts 'END' .
+    Conditional: 'IF' Expr 'THEN' Stmts 'ELSE' Stmts 'END' .
+    DeclList:  .
+    DeclList: Decl .
+    DeclList: Decl ';' DeclList .
+    Decl: ProcDecl .
+    Decls: DeclList .
+    Decl: TypeDecl .
+    Decl: VrblDecl .
+    Expr: O1 .
+    Formal: VarNameDef ':' Type .
+    FormalList: Formal .
+    FormalList: FormalList ';' Formal .
+    FormalListT: FormalListT ';' FormalT .
+    FormalListT: FormalT .
+    Formals:  .
+    Formals: FormalList .
+    FormalsT:  .
+    FormalsT: FormalListT .
+    FormalT: VarNameDef ':' Type .
+    Iteration: 'WHILE' Expr 'DO' Stmts 'END' .
+    O1: O2 .
+    O1: O2 'AND' O2 .
+    O2: O3 .
+    O2: O3 '>' O3 .
+    O3: O3 '+' Operand .
+    O3: Operand .
+    Operand: '(' Expr ')' .
+    Operand: VarNameUse .
+    Operand: Number .
+    Operand: ProcNameUse '(' Actuals ')' .
+    Operand: Operand '[' Expr ']' .
+    Output: 'PRINT' Expr .
+    ProcDecl: 'PROCEDURE' ProcNameDef Procedure .
+    Procedure: '(' Formals ')' '=' Decls 'BEGIN' Stmts 'END' .
+    Procedure: '(' Formals '):' Type '=' Decls 'BEGIN' Stmts 'END' .
+    ProcTy: 'PROCEDURE' '(' FormalsT ')' .
+    ProcTy: 'PROCEDURE' '(' FormalsT ')' ':' Type .
+    Program: BlkSem .
+    Program: Block .
+    Return: 'RETURN' Expr .
+    Stmt: Assignment .
+    Stmt: Block .
+    Stmt: Conditional .
+    Stmt: Iteration .
+    StmtList:  .
+    StmtList: Stmt .
+    StmtList: Stmt ';' StmtList .
+    Stmt: Operand .
+    Stmt: Output .
+    Stmt: Return .
+    Stmts: StmtList .
+    SubrTy: '[' Number 'TO' Number ']' .
+    Type: ArrayTy .
+    TypeDecl: 'TYPE' TypeNameDef '=' Type .
+    Type: TypeNameUse .
+    Type: 'INTEGER' .
+    Type: ProcTy .
+    Type: SubrTy .
+    VrblDecl: 'VAR' VarNameDef ':' Type .
+}
+{
+    Type: 'INTEGER' .
+    Keyword: 'BEGIN' 'PRINT' 'END' 'VAR' 'TYPE' 'RETURN' 'PROCEDURE' 'ARRAY' 'OF' 'WHILE' 'DO' 'END' 'AND' 'TO'.
+}

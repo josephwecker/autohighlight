@@ -1,0 +1,26 @@
+{
+  int: $[0-9]+ .
+  id: $[A-Za-z][-A-Za-z0-9_]* .
+} {
+  document : document statement ';' .
+  document : .
+  statement: assignment .
+  statement: declaration .
+  statement: output .
+  assignment: idUse '=' expr .
+  expr: idUse .
+  expr: int .
+  declaration: 'var' idDef ':' typeUse .
+  idUse : id .
+  idDef : id .
+  typeUse : id.
+  output: 'Print' expr .
+} {
+  Type: typeUse .
+  String: idDef .
+  VariableName: idUse .
+  Keyword: 'var' .
+  Keyword: 'Print' .
+  Constant: int .
+}
+'

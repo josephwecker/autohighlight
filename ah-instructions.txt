@@ -1,0 +1,58 @@
+User Documentation
+
+To use autohighlighter, first you must generate an autohighlighter file.  This file specifies not only the specifics of the language you wish to color, but how you would like that language to be colored.  There are three main sections to the autohighlighter file: the gla section, which contains regular expressions for terminal symbols, the concrete syntax tree section, which contains the BNF grammar for the language, and the coloring section, which provides definitions of custom colors, and dictates which portions of the language will be colored which color.
+
+The gla section should consist of lines of the following format:
+
+identifier: $regularexpression .
+
+The BNF grammar section should consist of lines of the following format:
+
+symbol: symbol 'literal' symbol .
+
+where the right hand side may be any combination of symbols and literals, with literals enclosed in single quotes.
+
+The coloring section should consist of color definitions, and color mappings.  Color definitions are of the form:
+
+colorname {
+    color: red;
+    background: blue;
+    text-decoration: underline;
+}
+
+The complete list of attributes, with possible values are:
+
+font-family: <fontname>
+
+font-style: normal, italic
+
+font-weight: bold, normal
+
+font-size: <points>
+
+text-decoration: underline, overline, line-through, inverse
+
+color: Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, Brown, DarkYellow, LightGray, LightGrey, Gray, Grey, DarkGray, DarkGrey, Blue, LightBlue, Green, LightGreen, Cyan, LightCyan, Red, LightRed, Magenta, LightMagenta, Yellow, LightYellow, White
+
+background-color: Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, Brown, DarkYellow, LightGray, LightGrey, Gray, Grey, DarkGray, DarkGrey, Blue, LightBlue, Green, LightGreen, Cyan, LightCyan, Red, LightRed, Magenta, LightMagenta, Yellow, LightYellow, White
+
+Color mappings are of the form:
+
+colorname: symbol 'literal' symbol .
+
+Once the autohighlighter file has been generated, it should be given a .ah file suffix.  Then, the compiler should be run.  The full command line syntax is as follows:
+
+Usage: python ah.py [OPTION]... [FILE]
+Generates the specified syntax highlighting files from the given input FILE.
+
+Options:
+  -h, --help  Prints this help
+      --vim   Generates a vim syntax highlighting file
+      --emacs Generates an emacs font locking file
+      --error-checking Highlight all symbols not currently being colored as errors (currently works for vim only)
+
+This will yield <filename>.vim and <filename>.el files for vim and emacs respectively, named with respect to the input file.
+
+Installing the vim syntax file:
+
+To install the generated vim syntax file, place it in the .vim/syntax directory in your home directory.  To activate it, run ':set filetype=<filename>' in vim, where <filename> is the filename without the .vim ending.

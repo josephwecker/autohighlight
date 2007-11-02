@@ -1,0 +1,12 @@
+-*- mode: text; -*-
+
+It would be really cool to integrate our color locker with a2ps to
+produce quick and nice looking output.
+
+It would also be nice to build autoindenters a la lint.
+
+Also, it would be cool to build indenters for emacs and vi.
+
+Lastly, it would be cool if you could generate etags backend programs,
+so emacs could browse your source code with ease.
+

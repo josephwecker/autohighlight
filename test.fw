@@ -1,0 +1,235 @@
+/* $Id: test.fw,v 1.7 2005/12/02 05:26:54 scottw Exp $ */
+@p maximum_input_line_length = infinity
+
+Context-checking for Autohighlight.
+
+The autohighlighter must notify the end user of several exceptional
+circumstances. Herein are illustrated the methods which we have used or
+intend to use to detect and report these circumstances. A brief
+description is also provided about why the circumstance is exceptional.
+
+1. An error must be thrown if a symbol defined in the GLA specification
+is redefined in the CON specification. This is an error for fairly
+obvious reasons. We solve this problem by storing a Def property on the
+key defined for each GlaSymbolDef and throw an error if it is detected
+that the Def property has already been set for a given entity.
+
+2. An error must be thrown if a symbol defined in the GLA specification
+appears on the left-hand side of a production in the CON specification.
+We solve this in an analogous way to constraint 1.
+
+3. An error must be thrown if a color name is redefined. We solve this
+in an analogous way to constraint 1.
+
+4. You can't color a literal that isn't described in the CON
+specification. We accomplish this by using IdDefScope for literals in
+the CON specification and IdUseEnv for literals in the color
+specifications. To detect if a literal is used in the color spec that
+isn't defined in the CON spec, in the rule for LiteralUse, we check to
+see whether eli has a key for the literal. If not, then an error is thrown.
+
+5. Autohighlight allows the following color rule:
+variable-face: ifStmt['if'] .
+which means that the 'if' terminal in the ifStmt CON rule should be
+colored with the variable face. It is an error to attempt to color a
+literal that doesn't occur in the given rule. We are working on checking
+this using a similar method to the way structure members are checked:
+namely hanging a scope on each CON symbol which holds the bindings for
+all the literals occuring in that production.
+
+5a. Another error which can arise in statements of the previous form is
+that it is an error to attempt to color a literal which occurs in a rule
+with more than one production. No attempt is made to report this error
+currently, but to solve this problem, we would have the entity
+associated with each symbol store a Productions property which can be
+consulted to determine whether a given symbol would have more than one
+production.
+
+6. Autohighlight allows the following color rule:
+variable-face: ifStmt[0] .
+which means the first literal in ifStmt should be colored with variable
+face. It is an error to use a negative number, and also an error to use
+a subscript that outnumbers the total number of literals in a rule.
+Neither of these conditions are detected currently, but could easily be
+detected by counting with CONSTITUENTS...WITH and stored in the entity
+for each symbol.
+
+7. It is an error to attempt to highlight a construct which cannot be
+parsed with a regular language parser. This error is currently not
+detected and much work needs to be done to understand how to detect it.
+
+That said, many of the context analysis tasks facing Autohighlighter are
+unlike those faced in traditional compiled langauges. Further work is
+shortly forthcoming with addresses the shortcomings of the current
+implementation.
+
+
+
+@O@<test.specs@>==@{@-
+$/Name/AlgScope.gnrc :inst
+$/Name/PreDefine.gnrc +referto=Identifier :inst
+$/Name/PreDefId.gnrc +referto=(Predef.d) :inst
+@}
+
+@O@<test.head@>==@{@-
+#include "csm.h"
+@}
+
+@O@<test.lido@>==@{@-
+RULE: Document ::= '{' GlaFile '}' '{' ConFile '}' '{' AhFile '}' COMPUTE
+	Document.done = CONSTITUENTS GlaSymbolDef.defined <- CONSTITUENTS SymbolDef.defined;
+END;
+
+/* Name analysis role extension points */
+RULE: SymbolDef ::= Identifier COMPUTE 
+	SymbolDef.Sym = Identifier;
+END;
+SYMBOL SymbolDef INHERITS IdDefScope COMPUTE
+	SYNT.defined = SetDef(THIS.Key, 1, 2);
+END;
+RULE: GlaSymbolDef ::= Identifier END;
+SYMBOL GlaSymbolDef INHERITS IdDefScope COMPUTE
+	SYNT.Sym = TERM;
+	SYNT.defined = SetDef(THIS.Key, 1, 2);
+	SetTerminalCount(THIS.Key, 1, 1);
+	IF(EQ(GetDef(THIS.Key, 0), 2),
+		message(ERROR, "Symbol multiply defined", 0, COORDREF))
+		<- INCLUDING Document.done;
+END;
+
+RULE: SymbolUse ::= Identifier COMPUTE 
+	SymbolUse.Sym = Identifier;
+	IF(EQ(SymbolUse.Key, 0),
+		message(ERROR, "Undefined symbol",0,COORDREF));
+END;
+SYMBOL SymbolUse INHERITS IdUseEnv END;
+
+RULE: LiteralDef ::= Literal COMPUTE
+	LiteralDef.Sym = Literal;
+END;
+SYMBOL LiteralDef INHERITS IdDefScope END;
+
+RULE: LiteralUse ::= Literal COMPUTE
+	LiteralUse.Sym = Literal;
+	IF(EQ(LiteralUse.Key, 0),
+		message(ERROR, "Literal doesn't occur in the source grammar", 0, COORDREF));
+END;
+SYMBOL LiteralUse INHERITS IdUseEnv END;
+
+SYMBOL ColorDef INHERITS IdDefScope END;
+RULE: ColorDef ::= Identifier COMPUTE
+	ColorDef.defined = SetDef(ColorDef.Key, 1, 2);
+	IF(EQ(GetDef(ColorDef.Key,0),2),
+		message(ERROR, "Color multiply defined", 0, COORDREF))
+		<- INCLUDING AhFile.done;
+	ColorDef.Sym = Identifier;
+END;
+SYMBOL ColorUse INHERITS IdUseEnv END;
+RULE: ColorUse ::= Identifier COMPUTE
+	ColorUse.Sym = Identifier;
+	IF(EQ(ColorUse.Key, 0),
+		message(ERROR, "Undefined color", 0, COORDREF));
+	printf("Using color %s (%d) key %d\n", StringTable(ColorUse.Sym), ColorUse.Sym,
+		 ColorUse.Key);
+END;
+RULE: PreDefPatternUse ::= Identifier END;
+
+RULE: GlaFile LISTOF Specification END;
+RULE: Specification ::= GlaSymbolDef ':' RegularExpression '.' END;
+RULE: Specification ::= GlaSymbolDef ':' PreDefPatternUse '.' END;
+
+RULE: ConFile LISTOF Production END;
+RULE: Production ::= SymbolDef ':' Elements '.' END;
+RULE: Elements LISTOF Element END;
+RULE: ConSymbol ::= SymbolUse END;
+RULE: ConSymbol ::= LiteralDef END;
+RULE: Element ::= ConSymbol END;
+RULE: Element ::= '&' ConSymbol END;
+RULE: Element ::= '@@' ConSymbol END;
+RULE: Element ::= '$' ConSymbol END;
+/* These are either literals or symbol names, according to
+http://eli-project.sourceforge.net/elionline4.4/syntax_6.html#IDX138 */
+
+@}
+
+Now, a bit more explanation of the AhFile specification. An AhFile is
+a list of statements, some of which define new colors
+(SyntaxGroupRule), some of which instruct autohighlight how to color
+symbols found in the concrete grammar (MappingRule).
+
+A SyntaxGroupRule consists first of the name of the new color, which
+can't conflict with existing colors, followed by a list of color
+attributes. Two color attributes, font-face and font-size are listed
+below. A more comprehensive set is planned, but this small set was all
+that seemed necessary to demonstrate a proof of concept.
+
+A MappingRule consists first of the name of a color, followed by a
+list of RuleRefs. A rule ref in the form of 'literal' indicates that
+every occurrence of that literal is to be colored, while a rule ref in
+the form of ConSymbol['literal'] indicates that the literal should
+only be colored in the production of ConSymbol. A rule ref consisting
+of only a ConSymbol indicates that the ConSymbol itself should be
+colored whenever it appears. Lastly, ConSymbol[int]-style expressions
+are used to color the int-th element of the production of ConSymbol,
+and ConSymbol['literal'][int] is used to color the int-th occurrence
+of 'literal' in the producgion of ConSymbol.
+
+A large amount of complex analysis must be done to determine if a
+given rule ref is legal. The highlighter must be able to prove that a
+rule ref expands to a sequence of characters that can be recognized
+with a regular expression. The highlighter must also prove that the
+context of the symbol to be colored is unique from other colorings of
+the same symbol (consider the case of type names and variable names.
+They expand to the same lexical symbol, but if they have distinct
+contexts, they can be colored anyway).
+
+@O@<ah.lido@>==@{@-
+RULE: AhFile LISTOF Statement COMPUTE
+	AhFile.done = CONSTITUENTS ColorDef.defined;
+END;
+RULE: Statement ::= SyntaxGroupRule END;
+RULE: Statement ::= MappingRule END;
+RULE: SyntaxGroupRule ::= ColorDef '{' ColorAttrs '}' END;
+RULE: ColorAttrs LISTOF ColorAttr END;
+RULE: ColorAttr ::= 'font-face' ':' Literal ';' END;
+RULE: ColorAttr ::= 'font-size' ':' Integer ';' END;
+RULE: MappingRule ::= ColorUse ':' RuleRefs '.' END;
+RULE: RuleRefs LISTOF RuleRef END;
+RULE: RuleRef ::= SymbolUse END;
+RULE: RuleRef ::= SymbolUse '[' Integer ']' END;
+RULE: RuleRef ::= SymbolUse '[' LiteralUse ']' END;
+RULE: RuleRef ::= SymbolUse '[' LiteralUse ']' '[' Integer ']' END;
+RULE: RuleRef ::= LiteralUse END;
+@}
+
+@O@<test.pdl@>==@{@-
+variable_name_face -> Def = {1};
+builtin_face -> Def = {1};
+constant_face -> Def = {1};
+function_name_face -> Def = {1};
+keyword_face -> Def = {1};
+string_face -> Def = {1};
+type_face -> Def = {1};
+warning_face -> Def = {1};
+Def: int;
+OnlyTerminals: int;
+TerminalCount: int;
+@}
+
+@O@<Predef.d@>==@{@-
+PreDefKey("variable_name", variable_name_face)
+PreDefKey("builtin_face", builtin_face)
+PreDefKey("constant_face", constant_face)
+PreDefKey("function_name_face", function_name_face)
+PreDefKey("keyword_face", keyword_face)
+PreDefKey("string_face", string_face)
+PreDefKey("type_face", type_face)
+PreDefKey("warning_face", warning_face)
+@}
+
+@O@<test.gla@>==@{@-
+Identifier: C_IDENTIFIER [mkidn]
+Literal: MODULA2_LITERALSQ [mkidn]
+Integer: C_INTEGER [mkidn]
+RegularExpression: $\$[^\040]+ [mkidn]
+@}

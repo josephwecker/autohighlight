@@ -1,0 +1,23 @@
+;; This buffer is for notes you don't want to save, and for Lisp evaluation.
+;; If you want to create a file, visit that file with C-x C-f,
+;; then enter the text in that file's own buffer.
+
+0. Convert general exceptions in ah.py to specialized exceptions
+1. Test {} {} {}
+2. Get each exception to trigger once
+3. 
+
+xxxx 1. check whether a given gla symbol is defined more than once
+xxxx 2. you can't redefine a gla symbol in the con
+xxxx 3. you can't redefine a color
+xxxx 4. you can't color a literal that doesn't exist
+xxxx 4a. you can't use a symbol on the RHS of a CON rule unless it's defined.
+5. you can't color a literal in a rule that doesn't include that literal
+6. you can't use an integer that's out-of-bounds
+   - this implies you have to count the terminals of a symbol?
+   - this also implies you have to count the occurrences of a symbol
+   - we could store the elements of the consymbol as a computed tree on the symbol's entity.
+7. You can't color anything that's recursive. 
+
+Add mapping for predefined colors
+Need to be able to parse multiple values for the color attributes

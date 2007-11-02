@@ -1,0 +1,541 @@
+\documentclass[]{article}
+% $Id: final-paper.tex,v 1.3 2005/12/12 08:59:36 scotty Exp $
+
+\usepackage{fullpage,listings}
+
+\title{Automatic syntax highlighter generation}
+\author{Allen, S.~T.; Williams, S.~R.}
+\date{December 9, 2005}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+  Autohighlight is a tool that produces syntax highlighting modules
+  for user-defined BNF grammars and lexical specifications for Emacs
+  and VIM. Autohighlight can color all literals in a sample document,
+  plus a strictly-defined subset of the nonterminal symbols defined in
+  the BNF grammar.
+\end{abstract}
+  \section{Definitions}
+  Autohighlight is a meta-level tool, so the terms used to talk about
+  it are sometimes confusing. Autohighlight produces code that helps
+  the editor color the words in a file, called the {\em sample}, which
+  is a conforming example of a given {\em language}. The {\em language
+    spec} tells you the syntax and lexical properties of the language.
+  
+  Autohighlight is interested in two parts of the language spec, the
+  BNF grammar of the language (the {\em grammar}), and the lexical
+  specification of the basic symbols of the language (the {\em lexical
+    spec}). The lexical specification specifies the regular syntax of
+  {\em lexical symbols}.
+  
+  The BNF grammar of a language is made of a list of productions,
+  which name a {\em non-terminal} symbol on the left-hand side of a
+  rule and tell on the right-hand side of the rule what symbols (both {\em
+    terminals} ({\em literals} or lexical symbols) and non-terminals) the non-terminal
+  may expand to in the sample.
+  
+  {\em Expanding a symbol $s$ to terminals} on a non-terminal symbol
+  $s$ is accomplished by expanding all symbols in all the productions
+  of $s$ until only terminals remain. Note that not all non-terminal
+  symbols {\em can} be expanded to terminals---expanding the root of a
+  useful language should produce all the possible samples of that
+  language, which is infinite in many cases.
+  
+  Within the grammar, Autohighlight distinguishes among different
+  classes of non-terminal symbols. A non-terminal would be {\em
+    terminal-equivalent} if it produces a single terminal when
+  expanded to terminals. The {\em terminal-equivalent regex} of a
+  terminal-equivalent symbol $s$ is a regular expression matching the
+  terminals that the terminal-equivalent symbol $s$ may expand to. A
+  closely related action is to find the {\em left-most or right-most
+    expansion regex} of a given non-terminal $s$. This regex matches
+  the end of all productions of $s$ when $s$ is expanded to terminals.
+  
+  Lastly, Autohighlight employs a few more terms related to the BNF
+  grammar. The {\em total context} of a terminal-equivalent symbol $s$
+  is a set of pairs of expansion regexes that match the symbol's
+  context when it appears in the sample.
+  
+  \section{Motivation}
+  When we were first introduced to the Eli compiler generation system,
+  Scott immediately hacked out an Emacs mode for highlighting Eli's
+  FunnelWeb files. Writing syntax highlighting code is painful,
+  because a lot of effort is required to keep the highlighter in sync
+  with the language spec. Additionally, lots of iterations are
+  required to produce a highlighter that deals with coloring a symbol
+  has the same lexical specification as a symbol which should be
+  colored differently, as the context of the symbol must be taken into
+  account. Since the syntax highlighting specification is written by
+  intuition and not by a particular algorithm, there's always the
+  danger that a context will be missed simply because the author of
+  the syntax highlighting spec has never generated a sample containing
+  that particular context.
+  
+  \section{Analysis flow}
+  Autohighlight follows the general analysis flow of any compiler:
+  \begin{enumerate}
+  \item Tokenization
+  \item Parsing
+  \item Context-checking
+    \begin{enumerate}
+    \item Name analysis
+    \item Type analysis
+    \item Colorability analysis
+    \end{enumerate}
+  \item Output
+  \end{enumerate}
+
+  We'll delve further into the details of all the items than would be
+  necessary in an Eli-generated compiler because we implemented our
+  parser using Python. Despite using a different technology, many of
+  the same underlying concepts from Eli apply to our Python
+  implementation.
+
+  We began our implementation using Eli, abandoning the method when we
+  reached item 3, but the grammar of the Autohighlight specifications
+  didn't change. In order to provide a basis for understanding the
+  Autohighlight tokenizer and parser, figure \ref{fig:eli} gives the concrete
+  grammar and lexical specification we wrote for Eli.
+
+  \begin{figure}
+    \begin{lstlisting}
+@O@<test.gla@>==@{@-
+Identifier: C_IDENTIFIER [mkidn]
+Literal: MODULA2_LITERALSQ [mkidn]
+Integer: C_INTEGER [mkidn]
+RegularExpression: $\$[^\040]+ [mkidn]
+@}
+@O@<.lido@>==@{@-
+RULE: Document ::= '{' GlaFile '}' '{' ConFile '}' '{' AhFile '}' END;
+
+RULE: SymbolDef ::= Identifier END;
+RULE: GlaSymbolDef ::= Identifier END;
+RULE: LiteralDef ::= Literal END;
+RULE: LiteralUse ::= Literal END;
+RULE: ColorDef ::= Identifier END;
+RULE: ColorUse ::= Identifier END;
+RULE: PreDefPatternUse ::= Identifier END;
+
+RULE: GlaFile LISTOF Specification END;
+RULE: Specification ::= GlaSymbolDef ':' RegularExpression '.' END;
+RULE: Specification ::= GlaSymbolDef ':' PreDefPatternUse '.' END;
+
+RULE: ConFile LISTOF Production END;
+RULE: Production ::= SymbolDef ':' Elements '.' END;
+RULE: Elements LISTOF Element END;
+RULE: ConSymbol ::= SymbolUse END;
+RULE: ConSymbol ::= LiteralDef END;
+RULE: Element ::= ConSymbol END;
+RULE: Element ::= '&' ConSymbol END;
+RULE: Element ::= '@@' ConSymbol END;
+RULE: Element ::= '$' ConSymbol END;
+RULE: AhFile LISTOF Statement COMPUTE
+	AhFile.done = CONSTITUENTS ColorDef.defined;
+END;
+RULE: Statement ::= SyntaxGroupRule END;
+RULE: Statement ::= MappingRule END;
+RULE: SyntaxGroupRule ::= ColorDef '{' ColorAttrs '}' END;
+RULE: ColorAttrs LISTOF ColorAttr END;
+RULE: ColorAttr ::= 'font-face' ':' Literal ';' END;
+RULE: ColorAttr ::= 'font-size' ':' Integer ';' END;
+RULE: MappingRule ::= ColorUse ':' RuleRefs '.' END;
+RULE: RuleRefs LISTOF RuleRef END;
+RULE: RuleRef ::= SymbolUse END;
+RULE: RuleRef ::= LiteralUse END;
+@}
+    \end{lstlisting} %$
+    \label{fig:eli}
+    \caption{The Eli specification file for our generator.}
+  \end{figure}
+
+  \subsection{Tokenization}
+
+  The tokenizer is a finite state machine encapsulated in a Python generator.
+  Because it is a generator, to use it is simply matter of initializing it
+  (using a stream or a filename), and then simply calling next().  Each call to
+  next will return the next token. It is also possible to use it as a source
+  list in a for-in loop. A generator must have a method \verb+__iter__+ which
+  produces an object that has a \verb+next+ method. The next method is called
+  repeatedly to get the next element in the sequence the generator represents
+  until the \verb+next+ method raises a \verb+StopIteration+ exception.
+
+  \lstset{language=Python}
+  \begin{lstlisting}
+class Tokenizer:
+    ...
+    def next(self):
+        self.token, self.sline, self.scol, self.char = "", self.line, self.col, ''
+
+        while True:
+            self.char = self.stream.read(1)
+            retval = self.transition()
+            if self.char == '\n':
+                self.setCursor(self.line + 1, 0)
+            else: self.setCursor(self.line, self.col + 1)
+            if retval: return retval
+            if self.char == '': raise StopIteration()
+  \end{lstlisting}
+
+  The state machine has several transition actions when switching
+  between states. By looking at the transition actions listed below,
+  you can tell the state machine is not ``clean'' and some of the
+  state is kept in the tokenizer object as member data instead of
+  encapsulated in the state number. This is for practical reasons.
+  \begin{lstlisting}
+class Tokenizer:
+    ...
+    def add(self):
+        self.token += self.char
+        return None
+    def tok(self): return Token(self.sline, self.scol, self.token)
+    def push(self):
+        if self.char == '': return
+        self.setCursor(self.line, self.col - 1)
+        if self.col < 0 or self.char == '\n': self.setCursor(self.line - 1, 0)
+        self.stream.seek(-1, 1)
+    def stop(self): raise StopIteration()
+    def noop(self): return None
+    def reset(self):
+        self.sline, self.scol = self.line, self.col
+        return None
+    def strangechar(self): raise UnexpectedCharacter(self.line, self.col, self.char)
+    def endinstr(self): raise EofInString(self.sline, self.scol)
+  \end{lstlisting}
+  The state transition table is an array, where each element
+  corresponds to a state. Each element is a list of transitions out of
+  the state. Each transition is a tuple whose head is either a string
+  to match exactly or a regex to match that indicates whether this
+  transition should be used. The first transition whose head matches
+  is used. The second element in the transition tuple indicates the
+  destination state number, and the remainder of the tuple is a list
+  of actions to take on leaving. The \verb+c+ function is a helper
+  function that compiles its argument into a regular expression object.
+  \begin{lstlisting}
+class Tokenizer:
+    ...
+  transitions = [ \
+      # state 0: initial state \
+      [ (c("[A-Za-z]"), 1, reset, add), ('', 0, stop), (c('[0-9]'), 5, reset, add), \
+        ('$', 2, reset, add), ("'", 3, reset, add), \
+        (c('[][{}:;.]'), 0, reset, add, tok), (c('\s'), 0, noop), \
+        (c('.'), 0, strangechar) ], \
+      # state 1: accumulating identifiers \
+      [ ( c("[-A-Za-z0-9_]"), 1, add), ('', 0, tok), (c('.'), 0, push, tok) ], \
+      # state 2: accumulating regexes \
+      [ ('', 0, push, tok), (c('\s'), 0, tok), (c('.'), 2, add) ], \
+      # state 3: accumulating strings \
+      [ ('\\', 4, add), ("'", 0, add, tok), ('', 0, endinstr), (c('.'), 3, add) ], \
+      # state 4: escaping strings \
+      [ ('', 0, endinstr), (c('.'), 3, add) ], \
+      # state 5: integers \
+      [ (c("[0-9]"), 5, add), ('', 0, tok), (c('.'), 0, push, tok) ] ]
+  \end{lstlisting} % $
+  The transition notation is complex, so a member function
+  \verb+transition+ exists that takes the input character and the
+  current state, determines the transition, takes the transition
+  actions (accumulating their output). 
+  \begin{lstlisting}
+class Tokenizer:
+    ...
+    def transition(self):
+        statedef = self.transitions[self.state]
+        for path in statedef:
+            pat, dest = path[:2]
+            if type(pat).__name__ == "str" and pat == self.char or \
+               type(pat).__name__ == "SRE_Pattern" and pat.match(self.char):
+                for action in path[2:]:
+                    retval = action(self)
+                self.state = dest
+                return retval
+        raise Exception("No matching path for char %s from state %d."\
+                                % (self.char, self.state))
+  \end{lstlisting}
+
+  \subsection{Parsing and basic analysis}
+  Our parsing routine can perform basic name and type analysis for simple
+  cases, so the two are integrated. See \verb+Autohighlight::parse+ for details
+  on the highest level of parsing and simple analysis. Once the \verb+parse+
+  method has finished running, the \verb+Autohighlight+ object has a
+  \verb+ColorDefinitions+ hash containing entities representing colors defined
+  in the input file. It also contains an \verb+OrderedColorMappings+ list
+  representing the color requests the user made.  This is an ordered list, so
+  that color mappings will be output in the order specified by the user, to
+  allow the user to specify more specific color mappings first, and more
+  general color mappings last, to help the editors properly cope with ambiguous
+  colorings. Additionally, the object also contains a \verb+GlobalSymbolDict+
+  hash containing all the grammar and lexical symbols defined. After
+  \verb+parse+ is run, the only remaining step in the analysis phase is to
+  determine colorability, that is, to determine whether any coloring requests
+  the user has given meet the criteria for colorable symbols.
+
+  \subsubsection{Parsing the lexical section}
+  The method \verb+parse_lexical_symbols+ illustrated below works by
+  building up a stack until a complete lexical specification is built
+  up. When a period is found, it checks that the symbol isn't being
+  redefined, and then inserts it into the \verb+GlobalSymbolDict+
+  hash. 
+
+  \begin{lstlisting}
+class Autohighlight:
+    ...
+    def parse_lexical_symbols(self):
+        stack = []
+        self.tokenizer.next().must_be('{')
+        for token in self.tokenizer:
+            stack += [ token ]
+            if token.text == ".":
+                stack[0].assert_symbol_name()
+                stack[1].must_be(':')
+                stack[2].must_match('^\\$', "regular expression")
+                ## Name analysis
+                if stack[0].text in self.GlobalSymbolDict:
+                    originalDef = self.GlobalSymbolDict[stack[0].text].defining_token
+                    raise Exception("Symbol %s redefined at %d,%d. Originally at %d,%d" % (stack[0].text, stack[0].line, stack[0].col, \
+                                                                                           originalDef.line, originalDef.col))
+                s = Symbol(stack[0])
+                s.is_gla = True
+                s.regex = stack[2].text[1:]
+                self.GlobalSymbolDict[stack[0].text] = s
+                stack = []
+            elif token.text == "{":
+                raise Exception("Unexpected %s" % token)
+            elif token.text == "}":
+                if len(stack) > 1: raise Exception("Unfinished lexical specification beginning with %s" % stack[0])
+                #pp = pprint.PrettyPrinter()
+                #pp.pprint(self.GlobalSymbolDict)
+                return
+            else: pass
+  \end{lstlisting} %$
+
+  The other parsing tasks are similar.
+
+  \subsubsection{Analysis tasks}
+  \begin{itemize}
+  \item An error must be signaled if a lexical symbol is defined more
+    than once.
+  \item An error must be signaled if a lexical symbol is used on the
+    left-hand side of a production.
+  \item An error must be signaled if a color name is redefined.
+  \item An error must be signaled if a symbol on the right-hand side
+    of a production is not a defined lexical symbol, a literal, or a symbol
+    appearing on the left-hand side of another production
+  \end{itemize}
+  
+  \subsection{Colorability analysis}
+  There are further, more difficult analysis tasks handled separately
+  from the parser.
+  \begin{itemize}
+  \item The user may only color terminal-equivalent symbols.
+  \end{itemize}
+
+  In addition to the relatively simple task of determining whether a
+  symbol is terminal-equivalent, the output generation step requires
+  knowing the total context of a symbol, a much hairier process.
+  
+  \subsubsection{Determining terminal-equivalence}
+
+  Terminal equivalence works by looking down the expansion path for a
+  symbol. If at any time it recurses, it is not terminal equivalent.
+  If at any time it produces more than one symbol in a context (zero
+  is ok) it is not terminal equivalent.
+
+  \subsubsection{Determining context}
+  The context-finding algorithm is heart of the program. It figures out what literals may occur on either side of a given symbol. To do this, we first collect all the productions a symbol $s$ occurs in. In each production, we look to the left and the right of $s$. If a symbol exists on either side, then finding the context in this production is easy: find the regex that matches the leftmost portion of the symbol on the right-hand side and the regex that matches the rightmost of the symbol on the left-hand side.
+
+  If there is no symbol on a particular side, the operation becomes
+  more complex. In this case, it is necessary to look at the context of the symbol on the left hand side of the given production rule. The matching side of the parent context may be substituted for a lack of a symbol on either side of the current symbol.
+
+  This algorithm must also account for recursion.  It skips productionsthat it has already looed at once for the given symbol in a recursive call.  This allows it to still find all the other contexts within the recursion, producing the correct result.
+
+  Finally, we take some rudimentary steps to ensure that there are no duplicate contexts, as symbols may occur in different productions which yield the same immediate context.
+
+  \subsection{Output generation}
+  We applied the Strategy pattern in order to divest the Autohighlight
+  main module from knowing the details Emacs and VIM output
+  generation.
+
+  \section{Diary}
+  We kept a diary of all the time spent on this project and what our
+  object was since we switched from Eli to Python.
+  
+  \subsection{12/10/05}
+  We spent 16 hours rewriting the context finding algorithm and finishing writing documentation
+  with our context-finding algorithm.
+
+  \subsection{12/09/05}
+  We spent 9 hours writing documentation and fixing a serious problem
+  with our context-finding algorithm.
+
+  \subsection{12/08/05}
+  We spent 2 hours working on the context-finding algorithm.
+  
+  \subsection{12/07/05}
+  We spent 3 + 3 = 6 hours working. The time was spent writing and
+  debugging our symbol context-finding algorithm. We wrote several unit
+  tests as well.
+  
+  \subsection{12/03/05}
+  We spent 2.5 hours finishing the parser. Most of which was spent
+  working on getting a decent printed representation of our internal
+  state for debugging purposes (this is because of a not-well-developed
+  library for Python).
+  
+  \subsection{12/02/05}
+  Scott spent half an hour getting the last remaining unit tests to
+  pass. The failures were related to an unfortunate interaction between
+  the push tokenizer action and the text coordinate tracker. Decided to
+  parse only an integer numeric type (for now), ignoring floats, but the
+  possibility is there. The new tokenizer is implemented using decision
+  lists instead of a state table, and is much uglier for having to keep
+  track of its state across invocations of next (if python allowed
+  explicit co-routining, we wouldn't have to keep track of state).
+  Additionally, Python's stupid scoping rules made it nearly impossible
+  to do this without storing a lot of fields in the object instead of
+  the local scope of the next method (ugh). Reading through the docs
+  confirms this is a limitation, not a misunderstanding.
+
+  \subsection{12/01/05}
+  Scott spent 4 hours refactoring the tokenizer into an object, adding
+  unit tests, and adding error checking. Most of the difficulties were
+  related to getting text coordinates correct. Tokenizer throws
+  appropriate errors.
+  
+  
+  \subsection{11/30/05}
+  We dumped Eli for Python. We spent half an hour developing a
+  fully-functional input tokenizer and deciding on a design for the rest
+  of the program. Trouble we ran into: do lines begin with column 1 or
+  column 0? We opted for column 0.
+  
+  \section{Appendix: Complete Code}
+  \subsection{Token.py}
+  \lstinputlisting{token.py}
+  \subsection{Tokenize.py}
+  \lstinputlisting{tokenize.py}
+  \subsection{Symbol.py}
+  \lstinputlisting{symbol.py}
+  \subsection{Ah.py}
+  \lstinputlisting{ah.py}
+  \subsection{Outputter.py}
+  \lstinputlisting{outputter.py}
+  \subsection{EmacsOutputter.py}
+  \lstinputlisting{EmacsOutputter.py}
+  \subsection{VimOutputter.py}
+  \lstinputlisting{vimoutputter.py}
+
+  \section{Example run}
+
+  \subsection{simple.ah}
+  \lstset{language=}
+  \begin{lstlisting}
+{
+  int: $[0-9]+ .
+  id: $[A-Za-z][-A-Za-z0-9_]* .
+} {
+  document : document statement ';' .
+  document : .
+  statement: assignment .
+  statement: declaration .
+  statement: output .
+  assignment: idUse '=' expr .
+  expr: idUse .
+  expr: int .
+  declaration: 'var' idDef ':' typeUse .
+  idUse : id .
+  idDef : id .
+  typeUse : id.
+  output: 'Print' expr .
+} {
+  TypeColor {
+    color: blue;
+  }
+  TypeColor: typeUse .
+  IdDefColor: idDef .
+  VariableName: idUse .
+  IdDefColor {
+    color: blue;
+    text-decoration: underline;
+    font-weight: normal;
+    background-color: black;
+  }
+  Keyword: 'var' 'Print' .
+  Constant: int .
+}
+  \end{lstlisting}
+  \subsection{simple.el}
+  \lstset{language=Lisp}
+  \begin{lstlisting}
+(defgroup email-group nil "Customizations for email-mode.")
+(defface font-lock-email-IdDefColor-face
+  '((t (:foreground "blue")
+       (:weight normal)
+       (:background "black")
+       (:underline t)))
+  "Generated face for highlighting IdDefColors"
+  :group 'email-faces)
+
+(defface font-lock-email-TypeColor-face
+  '((t (:foreground "blue")
+       (:weight bold)
+       (:slant italic)
+       (:background "red")))
+  "Generated face for highlighting TypeColors"
+  :group 'email-faces)
+
+(defconst email-font-lock-keywords
+  '(("\\(?:\=\\)\\s-*\\([0-9]+\\)\\s-*\\(?:\;\\)"
+     ;;Highlight Constant
+     (1 'font-lock-constant-face))
+    ("\\(?:\(\\)\\s-*\\([0-9]+\\)\\s-*\\(?:\)\\)"
+     ;;Highlight Constant
+     (1 'font-lock-constant-face))
+    ("\\(?:\\<Print\\>\\)\\s-*\\([0-9]+\\)\\s-*\\(?:\;\\)"
+     ;;Highlight Constant
+     (1 'font-lock-constant-face))
+    ("\\(?:\\<var\\>\\)\\s-*\\([A-Za-z][-A-Za-z0-9_]*\\)\\s-*\\(?:\:\\)"
+     ;;Highlight IdDefColor
+     (1 'font-lock-email-IdDefColor-face))
+    ("\\(?:\:\\)\\s-*\\([A-Za-z][-A-Za-z0-9_]*\\)\\s-*\\(?:\;\\)"
+     ;;Highlight TypeColor
+     (1 'font-lock-email-TypeColor-face))
+    ("\\(?:\;\\|\\)\\s-*\\([A-Za-z][-A-Za-z0-9_]*\\)\\s-*\\(?:\=\\)"
+     ;;Highlight VariableName
+     (1 'font-lock-variable-name-face))
+    ("\\(?:\=\\)\\s-*\\([A-Za-z][-A-Za-z0-9_]*\\)\\s-*\\(?:\;\\)"
+     ;;Highlight VariableName
+     (1 'font-lock-variable-name-face))
+    ("\\(?:\(\\)\\s-*\\([A-Za-z][-A-Za-z0-9_]*\\)\\s-*\\(?:\)\\)"
+     ;;Highlight VariableName
+     (1 'font-lock-variable-name-face))
+    ("\\(?:\\<Print\\>\\)\\s-*\\([A-Za-z][-A-Za-z0-9_]*\\)\\s-*\\(?:\;\\)"
+     ;;Highlight VariableName
+     (1 'font-lock-variable-name-face))
+    ("\\(?:\;\\|\\)\\s-*\\(\\<var\\>\\)\\s-*\\(?:[A-Za-z][-A-Za-z0-9_]*\\)"
+     ;;Highlight Keyword
+     (1 'font-lock-keyword-face))
+    ("\\(?:\;\\|\\)\\s-*\\(\\<Print\\>\\)\\s-*\\(?:[A-Za-z][-A-Za-z0-9_]*\\|[0-9]+\\)"
+     ;;Highlight Keyword
+     (1 'font-lock-keyword-face))
+    ("\\(?:\;\\|\\)\\s-*\\(\\<if\\>\\)\\s-*\\(?:\(\\)"
+     ;;Highlight Keyword
+     (1 'font-lock-keyword-face))))
+(defun email-mode ()
+  (interactive)
+  (kill-all-local-variables)
+  (setq major-mode 'email-mode
+        mode-name "email"
+        fill-column 74
+        indent-tabs-mode t
+        tab-width 4)
+  (set (make-local-variable 'require-final-newline) t)
+  (set (make-local-variable 'next-line-add-newlines) nil)
+  (set (make-local-variable 'font-lock-defaults)
+       '(email-font-lock-keywords nil t nil backward-paragraph)))
+
+
+  \end{lstlisting}
+
+\end{document}
+
+% LocalWords:  regex tokenizer

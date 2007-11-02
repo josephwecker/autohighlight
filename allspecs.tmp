@@ -1,0 +1,15 @@
+# 1 "/home/scottw/.ODIN/aspen/FILES/z/test.gla.658360.gla"
+Identifier: C_IDENTIFIER [mkidn]
+Literal: C_STRING_LIT [mkstr]
+Integer: C_INTEGER [mkidn]
+RegularExpression: $\$[^\040]+ [mkidn]
+NewLine: NEW_LINE [mkidn]
+        SPACES
+# 1 "/home/scottw/.ODIN/aspen/PKGS/gla/separator"
+%EOFTOKEN 1
+# 1 "/home/scottw/.ODIN/aspen/FILES/a/w/test.fw.1217245.dflt_codes"
+Identifier		2
+Literal		3
+Integer		4
+RegularExpression		5
+NewLine		6
