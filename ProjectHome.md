@@ -1,0 +1,3 @@
+Of course, converting a context-free grammar to a regular grammar is not possible in the general case; however, practical languages are highly regular (otherwise regex-based syntax highlighting systems like vim and emacs wouldn't work at all!) Autohighlight generates vim and emacs syntax highlighting from a BNF grammar and a description of which terms should be highlighted which colors.
+
+This project originated from a student collaboration between Scotty Allen and Scott Williams at the University of Colorado in 2006.
